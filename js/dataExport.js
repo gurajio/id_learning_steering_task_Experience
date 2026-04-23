@@ -5,12 +5,14 @@ window.SteeringTask.DataExport = {
     const header = [
       "participantId", "conditionId", "conditionName", "conditionLabel", "width", "amplitude", "steeringId",
       "conditionOrder", "trialInCondition", "totalTrial", "startedAtIso", "mtMs", "success", "errorType",
-      "endpointX", "endpointY", "trajectoryJson"
+      "endpointX", "endpointY", "deviated", "deviationCount", "deviationTotalMs", "maxDeviationPx",
+      "deviationEventsJson", "trajectoryJson"
     ];
     const rows = results.map((row) => [
       row.participantId, row.conditionId, row.conditionName, row.conditionLabel, row.width, row.amplitude, row.steeringId,
       row.conditionOrder, row.trialInCondition, row.totalTrial, row.startedAtIso, row.mtMs, row.success, row.errorType,
-      row.endpointX, row.endpointY, JSON.stringify(row.trajectory)
+      row.endpointX, row.endpointY, row.deviated, row.deviationCount, row.deviationTotalMs, row.maxDeviationPx,
+      JSON.stringify(row.deviationEvents), JSON.stringify(row.trajectory)
     ].map(this.csvEscape).join(","));
     return [header.join(","), ...rows].join("\n");
   },

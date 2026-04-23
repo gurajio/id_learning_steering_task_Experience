@@ -43,6 +43,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   elements.startBtn.addEventListener("click", experiment.startExperiment);
+  elements.abortBtn.addEventListener("click", experiment.abortExperiment);
   elements.nextBtn.addEventListener("click", experiment.nextTrial);
   elements.retryBtn.addEventListener("click", experiment.nextTrial);
   elements.fullscreenBtn.addEventListener("click", () => document.documentElement.requestFullscreen?.());

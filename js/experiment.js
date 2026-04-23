@@ -2,8 +2,6 @@ window.SteeringTask = window.SteeringTask || {};
 
 window.SteeringTask.Experiment = function Experiment({ elements, config, geometry, renderer, ui }) {
   const totalTrials = config.conditions.reduce((sum, condition) => sum + condition.trials, 0);
-  const autoNextTrialDelayMs = config.autoNextTrialDelayMs ?? 800;
-  let autoAdvanceTimer = null;
   const state = {
     status: "idle",
     conditionIndex: 0,
@@ -38,25 +36,7 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     });
   }
 
-  function clearAutoAdvanceTimer() {
-    if (autoAdvanceTimer) {
-      clearTimeout(autoAdvanceTimer);
-      autoAdvanceTimer = null;
-    }
-  }
-
-  function scheduleNextTrial() {
-    clearAutoAdvanceTimer();
-    autoAdvanceTimer = setTimeout(() => {
-      autoAdvanceTimer = null;
-      if (state.status === "between" || state.status === "failed") {
-        prepareTrial();
-      }
-    }, autoNextTrialDelayMs);
-  }
-
   function resetExperiment() {
-    clearAutoAdvanceTimer();
     state.status = "idle";
     state.conditionIndex = 0;
     state.trialInCondition = 0;
@@ -69,19 +49,19 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
 
     elements.downloadCsvBtn.disabled = true;
     elements.downloadJsonBtn.disabled = true;
+    elements.abortBtn.disabled = true;
     elements.retryBtn.disabled = true;
     elements.nextBtn.disabled = true;
     elements.startBtn.disabled = false;
     ui.setInitialLog(elements);
-    ui.setMessage(elements, "参加者IDを入力し、実験開始を押してください。");
+    ui.setMessage(elements, "Enter participant ID and press Start.");
     updateUi();
     draw();
   }
 
   function startExperiment() {
-    clearAutoAdvanceTimer();
     if (!elements.participantInput.value.trim()) {
-      ui.setMessage(elements, "参加者IDを入力してください。", "fail");
+      ui.setMessage(elements, "Enter participant ID.", "fail");
       elements.participantInput.focus();
       return;
     }
@@ -91,13 +71,13 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     state.totalTrial = 0;
     state.results = [];
     elements.startBtn.disabled = true;
+    elements.abortBtn.disabled = false;
     elements.downloadCsvBtn.disabled = true;
     elements.downloadJsonBtn.disabled = true;
     prepareTrial();
   }
 
   function prepareTrial() {
-    clearAutoAdvanceTimer();
     const condition = currentCondition();
     if (!condition) {
       finishExperiment();
@@ -108,9 +88,10 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     state.pointerId = null;
     state.lastFailure = null;
     state.currentPath = geometry.makePath(elements.canvas, condition);
+    elements.abortBtn.disabled = false;
     elements.retryBtn.disabled = true;
     elements.nextBtn.disabled = true;
-    ui.setMessage(elements, `${condition.name} ${condition.label}: スタート円を押し、経路内を通って終点円でクリックしてください。`);
+    ui.setMessage(elements, `${condition.name} ${condition.label}: press START to begin MT measurement.`);
     draw();
     updateUi();
   }
@@ -120,7 +101,7 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     const path = state.currentPath;
     const radius = condition.width / 2;
     if (!geometry.isInsideCircle(point, path.start, radius)) {
-      ui.setMessage(elements, "スタート円の内側から開始してください。", "fail");
+      ui.setMessage(elements, "Start from inside the START circle.", "fail");
       return;
     }
 
@@ -147,10 +128,52 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
       errorType: "",
       endpointX: "",
       endpointY: "",
-      targetEnterTime: null,
+      deviated: false,
+      deviationCount: 0,
+      deviationTotalMs: 0,
+      maxDeviationPx: 0,
+      currentDeviation: null,
+      deviationEvents: [],
       trajectory: [{ x: point.x, y: point.y, t: 0 }]
     };
     draw();
+  }
+
+  function recordDeviationState(trial, point, t) {
+    const condition = currentCondition();
+    const deviation = geometry.getCorridorDeviation(point, state.currentPath, condition.width);
+    if (deviation.outsidePx > 0) {
+      trial.deviated = true;
+      trial.maxDeviationPx = Math.max(trial.maxDeviationPx, deviation.outsidePx);
+      if (!trial.currentDeviation) {
+        trial.deviationCount += 1;
+        trial.currentDeviation = {
+          startT: t,
+          endT: t,
+          maxOutsidePx: deviation.outsidePx
+        };
+      } else {
+        trial.currentDeviation.endT = t;
+        trial.currentDeviation.maxOutsidePx = Math.max(trial.currentDeviation.maxOutsidePx, deviation.outsidePx);
+      }
+      return;
+    }
+
+    closeDeviationEvent(trial, t);
+  }
+
+  function closeDeviationEvent(trial, t) {
+    if (!trial.currentDeviation) return;
+
+    trial.currentDeviation.endT = t;
+    trial.deviationTotalMs += trial.currentDeviation.endT - trial.currentDeviation.startT;
+    trial.deviationEvents.push({
+      startT: Math.round(trial.currentDeviation.startT),
+      endT: Math.round(trial.currentDeviation.endT),
+      durationMs: Math.round(trial.currentDeviation.endT - trial.currentDeviation.startT),
+      maxOutsidePx: Number(trial.currentDeviation.maxOutsidePx.toFixed(2))
+    });
+    trial.currentDeviation = null;
   }
 
   function recordMove(point) {
@@ -160,19 +183,35 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
 
     const t = performance.now() - trial.startTime;
     trial.trajectory.push({ x: point.x, y: point.y, t });
+    recordDeviationState(trial, point, t);
 
-    if (!geometry.isInsideCorridor(point, state.currentPath, condition.width)) {
-      failTrial("deviation", point);
+    if (geometry.isInsideCircle(point, state.currentPath.end, condition.width / 2)) {
+      completeSuccessfulTrial(point);
       return;
     }
 
-    if (geometry.isInsideCircle(point, state.currentPath.end, condition.width / 2)) {
-      trial.targetEnterTime ??= performance.now();
-    } else {
-      trial.targetEnterTime = null;
-    }
-
     draw(point);
+  }
+
+  function completeSuccessfulTrial(point) {
+    const trial = state.activeTrial;
+    if (!trial || state.status !== "running") return;
+
+    const now = performance.now();
+    closeDeviationEvent(trial, now - trial.startTime);
+    trial.success = true;
+    trial.endTime = now;
+    trial.mtMs = Math.round(trial.endTime - trial.startTime);
+    trial.errorType = "";
+    trial.endpointX = Number(point.x.toFixed(2));
+    trial.endpointY = Number(point.y.toFixed(2));
+    try {
+      elements.canvas.releasePointerCapture(state.pointerId);
+    } catch (_) {}
+    commitTrial(trial);
+    const deviationNote = trial.deviated ? ` / deviation ${trial.deviationCount}` : "";
+    ui.setMessage(elements, `success: MT ${trial.mtMs} ms${deviationNote}.`);
+    advanceAfterTrial();
   }
 
   function completeTrial(point) {
@@ -180,49 +219,38 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     const trial = state.activeTrial;
     if (!trial || state.status !== "running") return;
 
-    trial.trajectory.push({ x: point.x, y: point.y, t: performance.now() - trial.startTime });
-    const now = performance.now();
-    const stoppedAtTarget = trial.targetEnterTime && now - trial.targetEnterTime >= config.targetDwellMs;
+    const t = performance.now() - trial.startTime;
+    trial.trajectory.push({ x: point.x, y: point.y, t });
+    recordDeviationState(trial, point, t);
     if (!geometry.isInsideCircle(point, state.currentPath.end, condition.width / 2)) {
       failTrial("endpoint_miss", point);
       return;
     }
-    if (!stoppedAtTarget) {
-      failTrial("endpoint_not_stopped", point);
-      return;
-    }
-
-    trial.success = true;
-    trial.endTime = now;
-    trial.mtMs = Math.round(trial.endTime - trial.startTime);
-    trial.endpointX = Number(point.x.toFixed(2));
-    trial.endpointY = Number(point.y.toFixed(2));
-    commitTrial(trial);
-    ui.setMessage(elements, `成功: MT ${trial.mtMs} ms。次の試行へ進みます。`);
-    advanceAfterTrial();
+    completeSuccessfulTrial(point);
   }
 
-  function failTrial(errorType, point) {
+  function failTrial(errorType, point, shouldAdvance = true) {
     const trial = state.activeTrial;
     if (!trial) return;
 
+    const endpoint = point || trial.trajectory.at(-1);
     trial.success = false;
     trial.errorType = errorType;
     trial.endTime = performance.now();
     trial.mtMs = Math.round(trial.endTime - trial.startTime);
-    trial.endpointX = Number(point.x.toFixed(2));
-    trial.endpointY = Number(point.y.toFixed(2));
+    closeDeviationEvent(trial, trial.mtMs);
+    trial.endpointX = Number(endpoint.x.toFixed(2));
+    trial.endpointY = Number(endpoint.y.toFixed(2));
     commitTrial(trial);
     state.lastFailure = errorType;
 
     const messages = {
-      deviation: "失敗: 経路から逸脱しました。次試行へ進んでください。",
-      endpoint_miss: "失敗: 終点円の内側でクリックしてください。",
-      endpoint_not_stopped: "失敗: 終点で短く停止してからクリックしてください。",
-      pointer_cancel: "失敗: 入力が中断されました。次試行へ進んでください。",
-      manual_abort: "失敗: 試行を中断しました。次試行へ進んでください。"
+      endpoint_miss: "failed: endpoint was not reached.",
+      pointer_cancel: "failed: pointer input was canceled.",
+      manual_abort: "failed: trial was aborted."
     };
-    ui.setMessage(elements, messages[errorType] || "失敗しました。次試行へ進んでください。", "fail");
+    ui.setMessage(elements, messages[errorType] || "failed.", "fail");
+    if (!shouldAdvance) return;
     advanceAfterTrial(true);
   }
 
@@ -244,6 +272,11 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
       errorType: trial.errorType,
       endpointX: trial.endpointX,
       endpointY: trial.endpointY,
+      deviated: trial.deviated,
+      deviationCount: trial.deviationCount,
+      deviationTotalMs: Math.round(trial.deviationTotalMs),
+      maxDeviationPx: Number(trial.maxDeviationPx.toFixed(2)),
+      deviationEvents: trial.deviationEvents,
       trajectory: trial.trajectory.map((point) => ({
         x: Number(point.x.toFixed(2)),
         y: Number(point.y.toFixed(2)),
@@ -272,13 +305,13 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
         return;
       }
       state.status = "break";
+      elements.abortBtn.disabled = false;
       elements.nextBtn.disabled = false;
       elements.retryBtn.disabled = true;
-      ui.setMessage(elements, "条件ブロックが終了しました。休憩後、次へを押してください。", "break");
+      ui.setMessage(elements, "Condition block finished. Press Next when ready.");
     } else {
-      elements.retryBtn.disabled = true;
-      elements.nextBtn.disabled = true;
-      scheduleNextTrial();
+      prepareTrial();
+      return;
     }
 
     draw();
@@ -289,14 +322,16 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     state.status = "finished";
     elements.nextBtn.disabled = true;
     elements.retryBtn.disabled = true;
+    elements.abortBtn.disabled = true;
     elements.startBtn.disabled = false;
-    ui.setMessage(elements, "実験終了です。CSVまたはJSONを保存してください。");
+    elements.downloadCsvBtn.disabled = false;
+    elements.downloadJsonBtn.disabled = false;
+    ui.setMessage(elements, "Experiment finished. Save CSV or JSON.");
     draw();
     updateUi();
   }
 
   function nextTrial() {
-    clearAutoAdvanceTimer();
     if (state.status === "break" || state.status === "between" || state.status === "failed") {
       prepareTrial();
     }
@@ -306,6 +341,28 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     if (state.status === "running" && state.activeTrial) {
       failTrial("manual_abort", state.activeTrial.trajectory.at(-1));
     }
+  }
+
+  function abortExperiment() {
+    if (state.status === "idle" || state.status === "finished") return;
+    const hadActiveTrial = state.status === "running" && state.activeTrial;
+    if (hadActiveTrial) {
+      failTrial("manual_abort", state.activeTrial.trajectory.at(-1), false);
+    }
+    if (hadActiveTrial) {
+      state.trialInCondition += 1;
+      state.totalTrial += 1;
+    }
+    if (state.pointerId !== null) {
+      try {
+        elements.canvas.releasePointerCapture(state.pointerId);
+      } catch (_) {}
+    }
+    state.activeTrial = null;
+    state.pointerId = null;
+    state.currentPath = null;
+    finishExperiment();
+    ui.setMessage(elements, "Experiment aborted. Saved trials can be exported.");
   }
 
   return {
@@ -319,6 +376,7 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     recordMove,
     completeTrial,
     failTrial,
-    abortActiveTrial
+    abortActiveTrial,
+    abortExperiment
   };
 };

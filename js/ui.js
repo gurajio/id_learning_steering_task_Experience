@@ -14,6 +14,7 @@ window.SteeringTask.Ui = {
       errorValue: document.getElementById("errorValue"),
       summaryBody: document.getElementById("summaryBody"),
       startBtn: document.getElementById("startBtn"),
+      abortBtn: document.getElementById("abortBtn"),
       nextBtn: document.getElementById("nextBtn"),
       retryBtn: document.getElementById("retryBtn"),
       downloadCsvBtn: document.getElementById("downloadCsvBtn"),
@@ -70,8 +71,12 @@ window.SteeringTask.Ui = {
 
   updateLog(elements, row) {
     const result = row.success ? "success" : row.errorType;
+    const deviation = row.deviated
+      ? `deviation_count=${row.deviationCount}, deviation_total=${row.deviationTotalMs}ms, max_deviation=${row.maxDeviationPx}px`
+      : "deviation_count=0";
     elements.log.textContent = [
       `trial=${row.totalTrial}, condition=${row.conditionId}, result=${result}, MT=${row.mtMs}ms`,
+      deviation,
       `endpoint=(${row.endpointX}, ${row.endpointY}), trajectory_points=${row.trajectory.length}`,
       "",
       elements.log.textContent === "ログ待機中" ? "" : elements.log.textContent

@@ -25,10 +25,18 @@ window.SteeringTask.Geometry = {
   },
 
   isInsideCorridor(point, path, width) {
+    return this.getCorridorDeviation(point, path, width).outsidePx <= 0;
+  },
+
+  getCorridorDeviation(point, path, width) {
     const radius = width / 2;
     const d1 = this.pointToSegmentDistance(point, path.start, path.corner);
     const d2 = this.pointToSegmentDistance(point, path.corner, path.end);
-    return Math.min(d1, d2) <= radius;
+    const distance = Math.min(d1, d2);
+    return {
+      distance,
+      outsidePx: Math.max(0, distance - radius)
+    };
   },
 
   pointToSegmentDistance(point, a, b) {
