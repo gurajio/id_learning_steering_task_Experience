@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>同一IDステアリング課題 実験システム</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div>
+        <h1>同一IDステアリング課題</h1>
+        <p class="muted">90度の曲がりを1回含む経路を、逸脱せず終点で停止してクリックします。3条件はすべて ID = A / W = 6 です。</p>
+      </div>
+
+      <div class="panel">
+        <h2>参加者</h2>
+        <div class="field">
+          <label for="participantId">参加者ID</label>
+          <input id="participantId" autocomplete="off" placeholder="例: P001">
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>条件</h2>
+        <div id="conditionList" class="condition-list"></div>
+      </div>
+
+      <div class="panel">
+        <h2>進行</h2>
+        <div class="stats">
+          <div class="stat">
+            <div class="label">条件</div>
+            <div id="conditionValue" class="value">-</div>
+          </div>
+          <div class="stat">
+            <div class="label">試行</div>
+            <div id="trialValue" class="value">0 / 90</div>
+          </div>
+          <div class="stat">
+            <div class="label">成功</div>
+            <div id="successValue" class="value">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">失敗</div>
+            <div id="errorValue" class="value">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button id="startBtn" class="primary">実験開始</button>
+        <button id="nextBtn" disabled>次へ</button>
+        <button id="retryBtn" disabled>次試行</button>
+        <button id="downloadCsvBtn" disabled>CSV保存</button>
+        <button id="downloadJsonBtn" disabled>JSON保存</button>
+      </div>
+
+      <div class="panel">
+        <h2>条件別概要</h2>
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th>条件</th>
+              <th>平均MT</th>
+              <th>誤り率</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div id="message" class="message">参加者IDを入力し、実験開始を押してください。</div>
+        <button id="fullscreenBtn">全画面</button>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="taskCanvas" width="1100" height="740"></canvas>
+      </div>
+      <div id="log" class="log">ログ待機中</div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/geometry.js"></script>
+  <script src="js/dataExport.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/experiment.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
