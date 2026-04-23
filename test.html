@@ -51,7 +51,6 @@
 
       <div class="buttons">
         <button id="startBtn" class="primary">実験開始</button>
-        <button id="abortBtn" disabled>中止</button>
         <button id="nextBtn" disabled>次へ</button>
         <button id="retryBtn" disabled>次試行</button>
         <button id="downloadCsvBtn" disabled>CSV保存</button>
@@ -74,6 +73,20 @@
     </aside>
 
     <main>
+      <div class="experiment-hud">
+        <div class="hud-stat">
+          <span>条件</span>
+          <strong id="hudConditionValue">-</strong>
+        </div>
+        <div class="hud-stat">
+          <span>試行数</span>
+          <strong id="hudTrialValue">0 / 0</strong>
+        </div>
+        <button id="pauseResumeBtn">中止</button>
+        <button id="breakBtn">休憩 1分</button>
+        <button id="abortBtn">終了</button>
+        <span id="breakTimer" class="break-timer"></span>
+      </div>
       <div class="topbar">
         <div id="message" class="message">参加者IDを入力し、実験開始を押してください。</div>
         <button id="fullscreenBtn">全画面</button>

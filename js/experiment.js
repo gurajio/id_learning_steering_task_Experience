@@ -11,7 +11,10 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     pointerId: null,
     results: [],
     currentPath: null,
-    lastFailure: null
+    lastFailure: null,
+    resumeStatus: null,
+    breakEndsAt: null,
+    breakTimerId: null
   };
 
   function currentCondition() {
@@ -36,6 +39,28 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     });
   }
 
+  function setExperimentMode(enabled) {
+    document.body.classList.toggle("experiment-mode", enabled);
+  }
+
+  function clearBreakTimer() {
+    if (state.breakTimerId) {
+      clearInterval(state.breakTimerId);
+      state.breakTimerId = null;
+    }
+    state.breakEndsAt = null;
+    if (elements.breakTimer) elements.breakTimer.textContent = "";
+  }
+
+  function updateBreakTimer() {
+    if (!state.breakEndsAt || !elements.breakTimer) return;
+
+    const remainingMs = Math.max(0, state.breakEndsAt - Date.now());
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    elements.breakTimer.textContent = remainingSec > 0 ? `休憩 ${remainingSec}秒` : "";
+    if (remainingMs <= 0) resumeExperiment();
+  }
+
   function resetExperiment() {
     state.status = "idle";
     state.conditionIndex = 0;
@@ -46,10 +71,15 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     state.results = [];
     state.currentPath = null;
     state.lastFailure = null;
+    state.resumeStatus = null;
+    clearBreakTimer();
+    setExperimentMode(false);
 
     elements.downloadCsvBtn.disabled = true;
     elements.downloadJsonBtn.disabled = true;
     elements.abortBtn.disabled = true;
+    elements.pauseResumeBtn.disabled = true;
+    elements.breakBtn.disabled = true;
     elements.retryBtn.disabled = true;
     elements.nextBtn.disabled = true;
     elements.startBtn.disabled = false;
@@ -70,8 +100,11 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     state.trialInCondition = 0;
     state.totalTrial = 0;
     state.results = [];
+    setExperimentMode(true);
     elements.startBtn.disabled = true;
     elements.abortBtn.disabled = false;
+    elements.pauseResumeBtn.disabled = false;
+    elements.breakBtn.disabled = false;
     elements.downloadCsvBtn.disabled = true;
     elements.downloadJsonBtn.disabled = true;
     prepareTrial();
@@ -85,6 +118,7 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     }
 
     state.status = "ready";
+    state.resumeStatus = null;
     state.pointerId = null;
     state.lastFailure = null;
     state.currentPath = geometry.makePath(elements.canvas, condition);
@@ -319,13 +353,17 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
   }
 
   function finishExperiment() {
+    clearBreakTimer();
     state.status = "finished";
     elements.nextBtn.disabled = true;
     elements.retryBtn.disabled = true;
     elements.abortBtn.disabled = true;
+    elements.pauseResumeBtn.disabled = true;
+    elements.breakBtn.disabled = true;
     elements.startBtn.disabled = false;
     elements.downloadCsvBtn.disabled = false;
     elements.downloadJsonBtn.disabled = false;
+    setExperimentMode(false);
     ui.setMessage(elements, "Experiment finished. Save CSV or JSON.");
     draw();
     updateUi();
@@ -365,6 +403,56 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     ui.setMessage(elements, "Experiment aborted. Saved trials can be exported.");
   }
 
+  function pauseExperiment() {
+    if (state.status === "idle" || state.status === "finished") return;
+    if (state.status === "break") {
+      nextTrial();
+      return;
+    }
+    if (state.status === "paused" || state.status === "break_timer") {
+      resumeExperiment();
+      return;
+    }
+    if (state.status === "running") {
+      ui.setMessage(elements, "現在の試行を終えてから中止できます。", "fail");
+      return;
+    }
+
+    state.resumeStatus = state.status;
+    state.status = "paused";
+    ui.setMessage(elements, "中止中です。再開を押すと続きから開始できます。", "break");
+    updateUi();
+    draw();
+  }
+
+  function resumeExperiment() {
+    if (state.status !== "paused" && state.status !== "break_timer") return;
+
+    clearBreakTimer();
+    state.status = state.resumeStatus || "ready";
+    state.resumeStatus = null;
+    ui.setMessage(elements, "再開しました。STARTを押すとMT計測が始まります。");
+    updateUi();
+    draw();
+  }
+
+  function startBreak() {
+    if (state.status === "running") {
+      ui.setMessage(elements, "現在の試行を終えてから休憩できます。", "fail");
+      return;
+    }
+    if (state.status === "idle" || state.status === "finished" || state.status === "paused" || state.status === "break_timer") return;
+
+    state.resumeStatus = state.status;
+    state.status = "break_timer";
+    state.breakEndsAt = Date.now() + 60000;
+    state.breakTimerId = setInterval(updateBreakTimer, 250);
+    ui.setMessage(elements, "1分休憩中です。再開を押すと早めに戻れます。", "break");
+    updateBreakTimer();
+    updateUi();
+    draw();
+  }
+
   return {
     state,
     currentCondition,
@@ -377,6 +465,8 @@ window.SteeringTask.Experiment = function Experiment({ elements, config, geometr
     completeTrial,
     failTrial,
     abortActiveTrial,
-    abortExperiment
+    abortExperiment,
+    pauseExperiment,
+    startBreak
   };
 };

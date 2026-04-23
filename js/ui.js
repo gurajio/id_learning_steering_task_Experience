@@ -12,9 +12,14 @@ window.SteeringTask.Ui = {
       trialValue: document.getElementById("trialValue"),
       successValue: document.getElementById("successValue"),
       errorValue: document.getElementById("errorValue"),
+      hudConditionValue: document.getElementById("hudConditionValue"),
+      hudTrialValue: document.getElementById("hudTrialValue"),
+      breakTimer: document.getElementById("breakTimer"),
       summaryBody: document.getElementById("summaryBody"),
       startBtn: document.getElementById("startBtn"),
       abortBtn: document.getElementById("abortBtn"),
+      pauseResumeBtn: document.getElementById("pauseResumeBtn"),
+      breakBtn: document.getElementById("breakBtn"),
       nextBtn: document.getElementById("nextBtn"),
       retryBtn: document.getElementById("retryBtn"),
       downloadCsvBtn: document.getElementById("downloadCsvBtn"),
@@ -33,6 +38,25 @@ window.SteeringTask.Ui = {
     elements.trialValue.textContent = `${state.totalTrial} / ${totalTrials}`;
     elements.successValue.textContent = String(state.results.filter((row) => row.success).length);
     elements.errorValue.textContent = String(state.results.filter((row) => !row.success).length);
+    if (elements.hudConditionValue) {
+      elements.hudConditionValue.textContent = currentCondition ? currentCondition.name.replace("条件", "C") : "-";
+    }
+    if (elements.hudTrialValue) {
+      const trialDisplay = state.status === "idle" || state.status === "finished"
+        ? state.totalTrial
+        : Math.min(state.totalTrial + 1, totalTrials);
+      elements.hudTrialValue.textContent = `${trialDisplay} / ${totalTrials}`;
+    }
+    if (elements.pauseResumeBtn) {
+      elements.pauseResumeBtn.textContent = state.status === "paused" || state.status === "break_timer" || state.status === "break" ? "再開" : "中止";
+      elements.pauseResumeBtn.disabled = state.status === "idle" || state.status === "finished";
+    }
+    if (elements.breakBtn) {
+      elements.breakBtn.disabled = state.status === "running" || state.status === "paused" || state.status === "break_timer" || state.status === "idle" || state.status === "finished";
+    }
+    if (elements.nextBtn) {
+      elements.nextBtn.disabled = state.status !== "break";
+    }
     this.renderConditionList(elements, conditions, state);
     this.renderSummary(elements, conditions, state.results);
   },
